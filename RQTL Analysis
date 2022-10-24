@@ -1,0 +1,145 @@
+##############
+# Markers
+##############
+
+##################
+# load file exported from genome studio (named genos1.csv in this example)
+##################
+
+rm(list = ls());ls ()
+geno1 <- read.csv("JPCgenos.csv", header = TRUE, row.names = 1, na.strings = "NA")
+
+#############################
+#Removing monomorphic markers
+#############################
+
+# this loop creates a new column in the data set to indicate whether the marker is monomorphic or no.
+
+for (j in c(1:nrow(geno1)))  {
+  
+  ifelse(geno1$PxC_1[j] == geno1$J_1[j], geno1$mono[j] <- "y",geno1$mono[j] <-"n")
+
+}
+
+# removing the monomorphic markers and the classifying column
+geno1<- geno1[geno1$mono=="n",1:ncol(geno1)]
+geno1<- geno1[1:nrow(geno1),1:ncol(geno1)-1]
+
+#######################
+#Recoding SNPs with 0 (Allele from P1) 1 (Heterozygous) 2 (Allele from P2)
+#######################
+
+geno2<- data.frame(matrix(ncol = dim(geno1)[2], nrow = dim(geno1)[1])) # creating an empty dataframe with same dimensions
+rownames(geno2)<-rownames(geno1) # same row names as the original file
+colnames(geno2)<-colnames(geno1) # same colnames as the original file
+
+for (i in c(1:ncol(geno2))) {
+  
+  for (j in c(1:nrow(geno2)))  {
+    
+    ifelse(geno1[j,i] == geno1$J_1[j], geno2[j,i] <- "0",
+           
+           ifelse(geno1[j,i] == geno1$PxC_1[j], geno2[j,i] <- "2", geno2[j,i] <- "1"))
+  }
+  
+}
+
+geno2[,] <- sapply(geno2[,], as.numeric) # making sure it is numeric
+geno2<- t(geno2)
+str(geno2)
+write.csv(geno2, "geno2.csv")
+
+geno2<-read.csv("geno2.csv", header = TRUE, row.names = 1, na.strings = "NA")
+
+#####################
+#Population structure
+#####################
+# This step helps visually the genetic relationship among lines and idetify outliers/contamination or other problems
+
+#hierarchical clusters
+hc <- hclust(dist(geno2))
+plot(hc, cex=0.5)
+
+# using dendrogram objects
+hcd <- as.dendrogram(hc)
+# alternative way to get a dendrogram
+plot(hcd, type = "triangle",cex=0.5 )
+
+#PCA plot
+
+# To make sure the PCA works, we need to impute the missing SNPs
+
+geno2<-t(geno2)
+library(impute)
+geno2_imp <- impute.knn(geno2)
+geno2_imp <- geno2_imp[["data"]]
+geno2_imp <- t(geno2_imp)
+geno2_imp <-data.frame(geno2_imp)
+write.csv(geno2_imp, "geno2_imp.csv")
+
+library(ggfortify)
+library(cluster)
+library(ggrepel)
+dev.off()
+
+# creating a vector of color based on the parents and RILs
+group <- as.factor(rep(c("parents", "rils"), c(2,152)))
+group
+color <- rep(0, length(group))
+for (i in 1:length(group)){
+  if (group[i] == "parents") {color[i] <- "red"}
+  if (group[i] == "rils") {color[i] <- "blue"}
+}
+color
+
+#tiff("gen-pca.png", width = 20, height = 20, res = 200, units = "cm")
+pc<- prcomp(geno2_imp)
+
+p1<-autoplot(pc,label = F, label.size = 3, colour = color, size=3) 
+
+p1 + annotate("text", x = -0.29, y = 0.14, label = "PxC_1", col="red", fontsize=13, fontface="bold") +
+  annotate("text", x = 0.28, y = -0.05, label = "J_1", col="red", fontsize=13, fontface="bold")
+
+dev.off()
+
+########################
+#preparing a map file
+#######################
+
+library(tidyr)
+
+map<-data.frame(file_name=colnames(geno2))
+
+map2<-map %>% separate(file_name, 
+                       c("chr", "pos","a1", "a2"))
+map2$chr2<-substr(map2[,1], 3, 4)
+
+map3<-data.frame(map,map2$chr2,map2$pos)
+rownames(map3)<-colnames(geno2)
+
+colnames(map3)<-c("marker","chr","pos")
+map3$chr <- as.factor(map3$chr)
+
+
+all(colnames(geno2) == rownames(map3))
+
+saveRDS(map3, "map")
+write.csv(map3, "map.csv")
+
+
+######################################
+#Preparing the genotype file for R/qtl
+######################################
+
+genotypes<-geno2
+genotypes[genotypes==0]<-"A"
+genotypes[genotypes==1]<-"H"
+genotypes[genotypes==2]<-"B"
+genotypes<-genotypes[-c(1:2), ] #removing parents
+str(genotypes)
+saveRDS(genotypes,"genotypes")
+write.csv(genotypes,"genotypes.csv")
+
+
+
+
