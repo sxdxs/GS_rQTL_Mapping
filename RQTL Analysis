@@ -143,3 +143,9 @@ write.csv(genotypes,"genotypes.csv")
 
 
 
+#Library(impute) does not work due to CRAN, use
+#if (!require("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+
+#BiocManager::install("impute")
+
